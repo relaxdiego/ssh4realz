@@ -1,0 +1,33 @@
+#!/bin/bash
+set -euo pipefail
+
+instance_id=$1
+
+instance_public_ip=$(
+    aws ec2 describe-instances \
+        --instance-ids $instance_id \
+        --max-items 1 \
+        --output text \
+        --query 'Reservations[0].Instances[0].PublicIpAddress'
+)
+
+
+while true; do
+    fingerprints=$(
+        echo "$(aws ec2 get-console-output --instance-id $instance_id --query "Output" --output text)" | \
+            awk '/-----BEGIN SSH HOST KEY FINGERPRINTS-----/{flag=1; next} /-----END SSH HOST KEY FINGERPRINTS-----/{flag=0} flag' | \
+            awk '{print "  "$6" "$8}' || echo -n ""
+    )
+    if [ -z "${fingerprints}" ]; then
+        echo "Console log not yet available. Retrying in 15 seconds..."
+        sleep 15
+    else
+        break
+    fi
+done
+
+echo "The fingerprints for ${instance_id} (${instance_public_ip}) are:"
+echo "${fingerprints}"
+echo "Connecting to $instance_public_ip..."
+echo "----------------------------------------------------------"
+ssh ubuntu@$instance_public_ip
